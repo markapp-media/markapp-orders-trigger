@@ -1,0 +1,36 @@
+name: Trigger
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trigger
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Slack and wake the bot
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python trigger.py
+      - name: Weekly keep-alive (GitHub pauses idle scheduled workflows after 60 days)
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date -u +%u%H)" = "100" ] && [ "$(date -u +%M)" -lt 5 ]; then
+            date -u +%F > last_alive.txt
+            git config user.name "markapp-orders-bot"
+            git config user.email "adtech@markappmedia.site"
+            git add last_alive.txt && git commit -m "keep-alive" && git push
+          fi
