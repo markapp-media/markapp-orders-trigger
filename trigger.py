@@ -10,7 +10,8 @@ import time
 import urllib.parse
 import urllib.request
 
-CHANNELS = ["C0C9KKMG53M", "C092GNL0E6A", "C0C6ECNBTQU", "C0C6EKFJ7UL", "C0C6PSH3WVB", "C0C9FU3TPCY"]
+CHANNELS = ["C0C9KKMG53M", "C092GNL0E6A", "C0C6ECNBTQU", "C0C6EKFJ7UL", "C0C6PSH3WVB", "C0C9FU3TPCY",
+            "C0C7P1Z52A3"]   # last = owner-only channel (bot must be invited)
 TARGET = "markapp-media/markapp-remote-orders"
 LOOKBACK_DAYS = 14
 DEFAULT_WINDOW = 15 * 60
