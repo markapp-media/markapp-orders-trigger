@@ -16,6 +16,8 @@ LOOKBACK_DAYS = 14
 DEFAULT_WINDOW = 15 * 60
 CHECK_EVERY = 45
 WATCH_MINUTES = float(os.environ.get("WATCH_MINUTES", "50"))
+# Named agents with their own Slack bot (secret name). Their channels are the ones that bot is in.
+AGENT_TOKENS = ["HARION_DSP_OPS_BOT_TOKEN"]
 
 
 def token(name):
@@ -39,6 +41,33 @@ def since_last_run():
     except Exception as e:
         print(f"previous run lookup failed ({type(e).__name__}); using default window")
     return time.time() - DEFAULT_WINDOW
+
+
+def agent_channels(slack):
+    """Channels a named agent's bot is a member of (empty list until its channel is set up; None on error)."""
+    body = get("https://slack.com/api/users.conversations?" + urllib.parse.urlencode(
+        {"types": "public_channel,private_channel", "limit": 200, "exclude_archived": "true"}), slack)
+    if not body.get("ok"):
+        print(f"agent bot: slack error {body.get('error')}")
+        return None
+    return [c["id"] for c in body.get("channels", [])]
+
+
+def agent_hits(cut, setup_asked):
+    """Activity in named agents' channels; a token without a channel asks for setup once per run."""
+    hits = 0
+    for env in AGENT_TOKENS:
+        if not os.environ.get(env, "").strip():
+            continue
+        agent = token(env)
+        chans = agent_channels(agent)
+        if chans == []:
+            if env not in setup_asked:
+                setup_asked.add(env)
+                hits += 1
+            continue
+        hits += sum(1 for c in (chans or []) if active(c, cut, agent))
+    return hits
 
 
 def active(channel, cut, slack):
@@ -71,10 +100,11 @@ def main():
     cut = since_last_run()
     stop = time.time() + WATCH_MINUTES * 60
     checks = wakes = 0
+    setup_asked = set()
     while True:
         started = time.time()
         try:
-            hits = sum(1 for c in CHANNELS if active(c, cut, slack))
+            hits = sum(1 for c in CHANNELS if active(c, cut, slack)) + agent_hits(cut, setup_asked)
             if hits:
                 wake()
                 wakes += 1
