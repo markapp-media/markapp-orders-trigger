@@ -1,4 +1,8 @@
-"""Wake the private order bot when there is new Slack activity. Logs counts only, never message content."""
+"""Watch Slack for new activity and wake the private order bot. Logs counts only, never message content.
+
+GitHub runs scheduled workflows late (often every 25-35 min), so each run keeps watching for
+WATCH_MINUTES and the next queued run takes over when it ends: continuous coverage, ~1 min latency.
+"""
 import calendar
 import json
 import os
@@ -10,6 +14,8 @@ CHANNELS = ["C0C9KKMG53M", "C092GNL0E6A", "C0C6ECNBTQU", "C0C6EKFJ7UL", "C0C6PSH
 TARGET = "markapp-media/markapp-remote-orders"
 LOOKBACK_DAYS = 14
 DEFAULT_WINDOW = 15 * 60
+CHECK_EVERY = 45
+WATCH_MINUTES = float(os.environ.get("WATCH_MINUTES", "50"))
 
 
 def token(name):
@@ -29,8 +35,7 @@ def since_last_run():
     try:
         runs = get(url, token("GITHUB_TOKEN")).get("workflow_runs", [])
         if runs:
-            started = calendar.timegm(time.strptime(runs[0]["run_started_at"], "%Y-%m-%dT%H:%M:%SZ"))
-            return started - 60
+            return calendar.timegm(time.strptime(runs[0]["run_started_at"], "%Y-%m-%dT%H:%M:%SZ")) - 60
     except Exception as e:
         print(f"previous run lookup failed ({type(e).__name__}); using default window")
     return time.time() - DEFAULT_WINDOW
@@ -50,13 +55,7 @@ def active(channel, cut, slack):
     return False
 
 
-def main():
-    slack = token("SLACK_BOT_TOKEN")
-    cut = since_last_run()
-    hits = [c for c in CHANNELS if active(c, cut, slack)]
-    print(f"window {int(time.time() - cut)}s, channels with activity: {len(hits)}")
-    if not hits:
-        return
+def wake():
     req = urllib.request.Request(
         f"https://api.github.com/repos/{TARGET}/dispatches",
         data=json.dumps({"event_type": "slack"}).encode(),
@@ -64,7 +63,29 @@ def main():
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=30) as r:
-        print(f"woke the order bot (HTTP {r.status})")
+        return r.status
+
+
+def main():
+    slack = token("SLACK_BOT_TOKEN")
+    cut = since_last_run()
+    stop = time.time() + WATCH_MINUTES * 60
+    checks = wakes = 0
+    while True:
+        started = time.time()
+        try:
+            hits = sum(1 for c in CHANNELS if active(c, cut, slack))
+            if hits:
+                wake()
+                wakes += 1
+            cut = started - 10
+        except Exception as e:
+            print(f"check failed ({type(e).__name__}); retrying next round")
+        checks += 1
+        if time.time() + CHECK_EVERY >= stop:
+            break
+        time.sleep(CHECK_EVERY)
+    print(f"{checks} checks, woke the order bot {wakes} times")
 
 
 if __name__ == "__main__":
