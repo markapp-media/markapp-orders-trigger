@@ -72,26 +72,47 @@ def agent_hits(cut, setup_asked):
     return hits
 
 
-# Only order-like activity wakes the private (billed) order bot: a tag of an order agent, a `repo:`/`dsp:` line,
-# a post forwarded by the weekly-agenda relay bot ("Requested by"), or a reply in a thread that is an order.
-ORDER_BOTS = ("<@U0C9KJFEF35", "<@U0C9K24DYCF")      # MarkApp Orders, harion_dsp_ops
+# Only activity the order bot acts on wakes it (private repo = billed minutes): a tag of the bot whose token reads
+# the channel, a `repo:`/`dsp:` line, a post forwarded by the weekly-agenda relay bot ("Requested by"), a reply in
+# an order thread, anything in the orders channel itself (untagged posts get a ❓ there), and posts that could carry
+# owner-only figures or files (the bot's leak check must still see them quickly).
+ORDERS_CHANNEL = "C0C9KKMG53M"
 RELAY_BOT = "U0CA095JWQ5"                            # MarkApp Briefs (weekly agenda relay)
-ORDER_TEXT = re.compile(r"^\W*(repo|dsp)\s*:|Requested by <@U", re.I | re.M)
+ORDER_TEXT = re.compile(r"^\W*(?:harion\s+)?(repo|dsp)\s*:|Requested by <@U", re.I | re.M)
+LEAK_HINT = re.compile(r"salar|payroll|ebitda|\bgp\b|gross profit|p\s*&\s*l|\bprofit|\bcash\b|[$€£]\s?\d|\d\s?%", re.I)
+ORDER_THREAD = ("Order `ORD-", "Which area is this for")
+BOT_IDS = {}                                          # token -> that bot's own user id
 
 
-def order_like(text):
-    return any(b in (text or "") for b in ORDER_BOTS) or bool(ORDER_TEXT.search(text or ""))
+def bot_id(slack):
+    if slack not in BOT_IDS:
+        BOT_IDS[slack] = get("https://slack.com/api/auth.test", slack).get("user_id") or "?"
+    return BOT_IDS[slack]
 
 
-def thread_is_order(channel, ts, cut, slack):
-    """A new reply counts when the thread is an order (the bot's 'Order `ORD-' ack is in it) or the reply itself
-    tags an order agent / starts with repo:."""
-    q = urllib.parse.urlencode({"channel": channel, "ts": ts, "limit": 100})
+def order_like(text, me):
+    text = text or ""
+    return f"<@{me}" in text or bool(ORDER_TEXT.search(text))
+
+
+def wakes(m, me, channel):
+    if m.get("user") == RELAY_BOT:
+        return order_like(m.get("text"), me)
+    if m.get("bot_id") or m.get("subtype") not in (None, "file_share", "thread_broadcast"):
+        return False
+    return (channel == ORDERS_CHANNEL or order_like(m.get("text"), me) or bool(m.get("files"))
+            or bool(LEAK_HINT.search(m.get("text") or "")))
+
+
+def thread_wakes(channel, ts, cut, slack, me):
+    """A new reply counts when the thread is an order (the bot asked or acked in it) or the reply itself would."""
+    q = urllib.parse.urlencode({"channel": channel, "ts": ts, "limit": 200})
     body = get(f"https://slack.com/api/conversations.replies?{q}", slack)
     msgs = body.get("messages", []) if body.get("ok") else []
-    if any("Order `ORD-" in (m.get("text") or "") for m in msgs):
-        return any(float(m["ts"]) > cut and not m.get("bot_id") for m in msgs[1:])
-    return any(float(m["ts"]) > cut and not m.get("bot_id") and order_like(m.get("text")) for m in msgs[1:])
+    fresh = [m for m in msgs[1:] if float(m["ts"]) > cut]
+    if any(k in (m.get("text") or "") for m in msgs for k in ORDER_THREAD):
+        return any(not m.get("bot_id") or m.get("user") == RELAY_BOT for m in fresh)
+    return any(wakes(m, me, None) for m in fresh)
 
 
 def active(channel, cut, slack):
@@ -100,13 +121,11 @@ def active(channel, cut, slack):
     if not body.get("ok"):
         print(f"{channel}: slack error {body.get('error')}")
         return False
+    me = bot_id(slack)
     for m in body.get("messages", []):
-        fresh = float(m["ts"]) > cut
-        human_post = fresh and not m.get("bot_id") and not m.get("subtype") and order_like(m.get("text"))
-        relay_post = fresh and m.get("user") == RELAY_BOT and order_like(m.get("text"))
-        if human_post or relay_post:
+        if float(m["ts"]) > cut and wakes(m, me, channel):
             return True
-        if float(m.get("latest_reply", 0)) > cut and thread_is_order(channel, m["ts"], cut, slack):
+        if float(m.get("latest_reply", 0)) > cut and thread_wakes(channel, m["ts"], cut, slack, me):
             return True
     return False
 
