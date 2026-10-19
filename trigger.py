@@ -4,6 +4,7 @@ GitHub runs scheduled workflows late (often every 25-35 min), so each run keeps 
 WATCH_MINUTES and the next queued run takes over when it ends: continuous coverage, ~1 min latency.
 """
 import calendar
+import re
 import json
 import os
 import time
@@ -71,6 +72,28 @@ def agent_hits(cut, setup_asked):
     return hits
 
 
+# Only order-like activity wakes the private (billed) order bot: a tag of an order agent, a `repo:`/`dsp:` line,
+# a post forwarded by the weekly-agenda relay bot ("Requested by"), or a reply in a thread that is an order.
+ORDER_BOTS = ("<@U0C9KJFEF35", "<@U0C9K24DYCF")      # MarkApp Orders, harion_dsp_ops
+RELAY_BOT = "U0CA095JWQ5"                            # MarkApp Briefs (weekly agenda relay)
+ORDER_TEXT = re.compile(r"^\W*(repo|dsp)\s*:|Requested by <@U", re.I | re.M)
+
+
+def order_like(text):
+    return any(b in (text or "") for b in ORDER_BOTS) or bool(ORDER_TEXT.search(text or ""))
+
+
+def thread_is_order(channel, ts, cut, slack):
+    """A new reply counts when the thread is an order (the bot's 'Order `ORD-' ack is in it) or the reply itself
+    tags an order agent / starts with repo:."""
+    q = urllib.parse.urlencode({"channel": channel, "ts": ts, "limit": 100})
+    body = get(f"https://slack.com/api/conversations.replies?{q}", slack)
+    msgs = body.get("messages", []) if body.get("ok") else []
+    if any("Order `ORD-" in (m.get("text") or "") for m in msgs):
+        return any(float(m["ts"]) > cut and not m.get("bot_id") for m in msgs[1:])
+    return any(float(m["ts"]) > cut and not m.get("bot_id") and order_like(m.get("text")) for m in msgs[1:])
+
+
 def active(channel, cut, slack):
     q = urllib.parse.urlencode({"channel": channel, "oldest": f"{time.time() - LOOKBACK_DAYS * 86400:.0f}", "limit": 200})
     body = get(f"https://slack.com/api/conversations.history?{q}", slack)
@@ -78,9 +101,12 @@ def active(channel, cut, slack):
         print(f"{channel}: slack error {body.get('error')}")
         return False
     for m in body.get("messages", []):
-        human_post = float(m["ts"]) > cut and not m.get("bot_id") and not m.get("subtype")
-        new_reply = float(m.get("latest_reply", 0)) > cut
-        if human_post or new_reply:
+        fresh = float(m["ts"]) > cut
+        human_post = fresh and not m.get("bot_id") and not m.get("subtype") and order_like(m.get("text"))
+        relay_post = fresh and m.get("user") == RELAY_BOT and order_like(m.get("text"))
+        if human_post or relay_post:
+            return True
+        if float(m.get("latest_reply", 0)) > cut and thread_is_order(channel, m["ts"], cut, slack):
             return True
     return False
 
