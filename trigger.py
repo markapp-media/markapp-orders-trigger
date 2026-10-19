@@ -81,6 +81,43 @@ RELAY_BOT = "U0CA095JWQ5"                            # MarkApp Briefs (weekly ag
 ORDER_TEXT = re.compile(r"^\W*(?:harion\s+)?(repo|dsp)\s*:|Requested by <@U", re.I | re.M)
 LEAK_HINT = re.compile(r"salar|payroll|ebitda|\bgp\b|gross profit|p\s*&\s*l|\bprofit|\bcash\b|[$€£]\s?\d|\d\s?%", re.I)
 ORDER_THREAD = ("Order `ORD-", "Which area is this for")
+HANDOFF = ":handshake: Handoff from `ORD-"
+OWNER = "U0927E76VLP"
+WATCHDOG_EVERY = 10 * 60
+BILLING = "https://github.com/organizations/markapp-media/settings/billing"
+
+
+def post(channel, text, auth):
+    req = urllib.request.Request("https://slack.com/api/chat.postMessage", method="POST",
+                                 data=json.dumps({"channel": channel, "text": text}).encode(),
+                                 headers={"Authorization": f"Bearer {auth}", "Content-Type": "application/json; charset=utf-8"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def watchdog(cut, slack):
+    """Order-bot runs that GitHub never started at all (spending limit, billing, outage). The bot can't report
+    these itself, so the owner gets a DM. Stateless: a run is reported by the check whose window holds its end."""
+    gh = token("DISPATCH_TOKEN")
+    runs = get(f"https://api.github.com/repos/{TARGET}/actions/workflows/orders.yml/runs?per_page=20", gh)
+    bad = []
+    for r in runs.get("workflow_runs", []):
+        if r.get("status") != "completed" or r.get("conclusion") not in ("failure", "startup_failure"):
+            continue
+        if calendar.timegm(time.strptime(r["updated_at"], "%Y-%m-%dT%H:%M:%SZ")) <= cut:
+            continue
+        jobs = get(f"{r['jobs_url']}?per_page=50", gh).get("jobs", [])
+        if any(s.get("conclusion") and s.get("name") != "Set up job" for j in jobs for s in j.get("steps") or []):
+            continue    # it ran and failed by itself: a normal failure, not a start problem
+        reason = "GitHub could not start the workflow"
+        for j in jobs[:1]:
+            notes = get(f"https://api.github.com/repos/{TARGET}/check-runs/{j['id']}/annotations", gh)
+            reason = next((a["message"] for a in notes if a.get("message")), reason)
+        bad.append(f"• <{r['html_url']}|run {r['run_number']}>: {reason[:200]}")
+    if bad:
+        post(OWNER, ":hourglass: *GitHub did not start the order bot*. Slack orders wait until this is fixed.\n"
+             + "\n".join(bad[:5]) + f"\nUsually the Actions spending limit: {BILLING}", slack)
+    return len(bad)
 BOT_IDS = {}                                          # token -> that bot's own user id
 
 
@@ -96,6 +133,8 @@ def order_like(text, me):
 
 
 def wakes(m, me, channel):
+    if HANDOFF in (m.get("text") or "") and m.get("bot_id"):
+        return True     # one order handing work to another agent/repo (posted by MarkApp Orders)
     if m.get("user") == RELAY_BOT:
         return order_like(m.get("text"), me)
     if m.get("bot_id") or m.get("subtype") not in (None, "file_share", "thread_broadcast"):
@@ -145,23 +184,30 @@ def main():
     slack = token("SLACK_BOT_TOKEN")
     cut = since_last_run()
     stop = time.time() + WATCH_MINUTES * 60
-    checks = wakes = 0
+    checks = woke = stalled = 0
     setup_asked = set()
+    wd_cut, wd_next = cut, 0
     while True:
         started = time.time()
         try:
             hits = sum(1 for c in CHANNELS if active(c, cut, slack)) + agent_hits(cut, setup_asked)
             if hits:
                 wake()
-                wakes += 1
+                woke += 1
             cut = started - 10
         except Exception as e:
             print(f"check failed ({type(e).__name__}); retrying next round")
+        if started >= wd_next:
+            try:
+                stalled += watchdog(wd_cut, slack)
+                wd_cut, wd_next = started - 10, started + WATCHDOG_EVERY
+            except Exception as e:
+                print(f"watchdog failed ({type(e).__name__})")
         checks += 1
         if time.time() + CHECK_EVERY >= stop:
             break
         time.sleep(CHECK_EVERY)
-    print(f"{checks} checks, woke the order bot {wakes} times")
+    print(f"{checks} checks, woke the order bot {woke} times, {stalled} run(s) GitHub did not start")
 
 
 if __name__ == "__main__":
