@@ -24,6 +24,7 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           HARION_DSP_OPS_BOT_TOKEN: ${{ secrets.HARION_DSP_OPS_BOT_TOKEN }}
+          MARKAPP_CREATIVE_BOT_TOKEN: ${{ secrets.MARKAPP_CREATIVE_BOT_TOKEN }}
           DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: python trigger.py
