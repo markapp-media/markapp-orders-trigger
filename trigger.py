@@ -78,7 +78,7 @@ def agent_hits(cut, setup_asked):
 # owner-only figures or files (the bot's leak check must still see them quickly).
 ORDERS_CHANNEL = "C0C9KKMG53M"
 RELAY_BOT = "U0CA095JWQ5"                            # MarkApp Briefs (weekly agenda relay)
-ORDER_TEXT = re.compile(r"^\W*(?:harion\s+)?(repo|dsp)\s*:|Requested by <@U", re.I | re.M)
+ORDER_TEXT = re.compile(r"^\W*(?:harion\s+)?(repo|dsp|creative)\s*:|Requested by <@U", re.I | re.M)
 LEAK_HINT = re.compile(r"salar|payroll|ebitda|\bgp\b|gross profit|p\s*&\s*l|\bprofit|\bcash\b|[$€£]\s?\d|\d\s?%", re.I)
 ORDER_THREAD = ("Order `ORD-", "Which area is this for")
 HANDOFF = ":handshake: Handoff from `ORD-"
