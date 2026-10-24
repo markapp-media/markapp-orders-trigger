@@ -52,7 +52,10 @@ def agent_channels(slack):
     if not body.get("ok"):
         print(f"agent bot: slack error {body.get('error')}")
         return None
-    return [c["id"] for c in body.get("channels", [])]
+    chans = [c["id"] for c in body.get("channels", [])]
+    ims = get("https://slack.com/api/users.conversations?" + urllib.parse.urlencode(
+        {"types": "im", "limit": 200}), slack)
+    return chans + ([c["id"] for c in ims.get("channels", [])] if ims.get("ok") else [])   # DMs need im:read
 
 
 def agent_hits(cut, setup_asked):
@@ -133,6 +136,8 @@ def order_like(text, me):
 
 
 def wakes(m, me, channel):
+    if channel and channel.startswith("D"):
+        return not m.get("bot_id") and m.get("subtype") in (None, "file_share")   # a person writing to an agent bot
     if HANDOFF in (m.get("text") or "") and m.get("bot_id"):
         return True     # one order handing work to another agent/repo (posted by MarkApp Orders)
     if m.get("user") == RELAY_BOT:
