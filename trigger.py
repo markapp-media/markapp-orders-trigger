@@ -1,4 +1,5 @@
-"""Watch Slack for new activity and wake the private order bot. Logs counts only, never message content.
+"""Watch Slack for new activity and wake the private order bot. Logs only "ok" or an error type: never message
+content, channel ids or counts.
 
 GitHub runs scheduled workflows late (often every 25-35 min), so each run keeps watching for
 WATCH_MINUTES and the next queued run takes over when it ends: continuous coverage, ~1 min latency.
@@ -12,7 +13,7 @@ import urllib.parse
 import urllib.request
 
 CHANNELS = ["C0C9KKMG53M", "C092GNL0E6A", "C0C6ECNBTQU", "C0C6EKFJ7UL", "C0C6PSH3WVB", "C0C9FU3TPCY",
-            "C0C7P1Z52A3", "C0CBY3XEA3F"]   # owner-only channels: #markapp-treasury, #aishelf (bot must be invited)
+            "C0C7P1Z52A3", "C0CBY3XEA3F"]
 TARGET = "markapp-media/markapp-remote-orders"
 LOOKBACK_DAYS = 14
 DEFAULT_WINDOW = 15 * 60
@@ -50,7 +51,7 @@ def agent_channels(slack):
     body = get("https://slack.com/api/users.conversations?" + urllib.parse.urlencode(
         {"types": "public_channel,private_channel", "limit": 200, "exclude_archived": "true"}), slack)
     if not body.get("ok"):
-        print(f"agent bot: slack error {body.get('error')}")
+        print("agent bot: slack error")
         return None
     chans = [c["id"] for c in body.get("channels", [])]
     ims = get("https://slack.com/api/users.conversations?" + urllib.parse.urlencode(
@@ -75,12 +76,10 @@ def agent_hits(cut, setup_asked):
     return hits
 
 
-# Only activity the order bot acts on wakes it (private repo = billed minutes): a tag of the bot whose token reads
-# the channel, a `repo:`/`dsp:` line, a post forwarded by the weekly-agenda relay bot ("Requested by"), a reply in
-# an order thread, anything in the orders channel itself (untagged posts get a ❓ there), and posts that could carry
-# owner-only figures or files (the bot's leak check must still see them quickly).
+# Only activity the order bot acts on wakes it (private repo = billed minutes): a tag of the bot, an order line,
+# a relayed order, a reply in an order thread, anything in the orders channel, and posts its checks must see.
 ORDERS_CHANNEL = "C0C9KKMG53M"
-RELAY_BOT = "U0CA095JWQ5"                            # MarkApp Briefs (weekly agenda relay)
+RELAY_BOT = "U0CA095JWQ5"
 ORDER_TEXT = re.compile(r"^\W*(?:harion\s+)?(repo|dsp|creative)\s*:|Requested by <@U", re.I | re.M)
 LEAK_HINT = re.compile(r"salar|payroll|ebitda|\bgp\b|gross profit|p\s*&\s*l|\bprofit|\bcash\b|[$€£]\s?\d|\d\s?%", re.I)
 ORDER_THREAD = ("Order `ORD-", "Which area is this for")
@@ -121,7 +120,7 @@ def watchdog(cut, slack):
         post(OWNER, ":hourglass: *GitHub did not start the order bot*. Slack orders wait until this is fixed.\n"
              + "\n".join(bad[:5]) + f"\nUsually the Actions spending limit: {BILLING}", slack)
     return len(bad)
-BOT_IDS = {}                                          # token -> that bot's own user id
+BOT_IDS = {}
 
 
 def bot_id(slack):
@@ -130,7 +129,7 @@ def bot_id(slack):
     return BOT_IDS[slack]
 
 
-ALIASES = ("U0CBN2FBQ6T",)   # @ai-shelf in #aishelf counts as a tag of the order bot
+ALIASES = ("U0CBN2FBQ6T",)
 
 
 def order_like(text, me):
@@ -166,7 +165,7 @@ def active(channel, cut, slack):
     q = urllib.parse.urlencode({"channel": channel, "oldest": f"{time.time() - LOOKBACK_DAYS * 86400:.0f}", "limit": 200})
     body = get(f"https://slack.com/api/conversations.history?{q}", slack)
     if not body.get("ok"):
-        print(f"{channel}: slack error {body.get('error')}")
+        print("slack error")
         return False
     me = bot_id(slack)
     for m in body.get("messages", []):
@@ -215,7 +214,7 @@ def main():
         if time.time() + CHECK_EVERY >= stop:
             break
         time.sleep(CHECK_EVERY)
-    print(f"{checks} checks, woke the order bot {woke} times, {stalled} run(s) GitHub did not start")
+    print("ok")
 
 
 if __name__ == "__main__":
