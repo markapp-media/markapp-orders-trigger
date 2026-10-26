@@ -130,9 +130,12 @@ def bot_id(slack):
     return BOT_IDS[slack]
 
 
+ALIASES = ("U0CBN2FBQ6T",)   # @ai-shelf in #aishelf counts as a tag of the order bot
+
+
 def order_like(text, me):
     text = text or ""
-    return f"<@{me}" in text or bool(ORDER_TEXT.search(text))
+    return f"<@{me}" in text or any(f"<@{a}" in text for a in ALIASES) or bool(ORDER_TEXT.search(text))
 
 
 def wakes(m, me, channel):
