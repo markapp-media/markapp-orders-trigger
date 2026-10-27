@@ -13,7 +13,8 @@ import urllib.parse
 import urllib.request
 
 CHANNELS = ["C0C9KKMG53M", "C092GNL0E6A", "C0C6ECNBTQU", "C0C6EKFJ7UL", "C0C6PSH3WVB", "C0C9FU3TPCY",
-            "C0C7P1Z52A3", "C0CBY3XEA3F"]
+            "C0C7P1Z52A3", "C0CBY3XEA3F",
+            "C0CCNQRRW2Y"]   # #project-design: C-level command room (Sotiris + Chris), 27 Oct 2026
 TARGET = "markapp-media/markapp-remote-orders"
 LOOKBACK_DAYS = 14
 DEFAULT_WINDOW = 15 * 60
@@ -166,7 +167,21 @@ def thread_wakes(channel, ts, cut, slack, me):
     return any(wakes(m, me, channel if channel in OWNER_ROOMS else None) for m in fresh)
 
 
-def active(channel, cut, slack):
+def extra_rooms(slack):
+    """Other private channels MarkApp Orders is in (e.g. a room between Sotiris and Chris, which the bot treats as a
+    C-level command room). Watched for tags/order lines only."""
+    try:
+        return [c for c in (agent_channels(slack) or []) if c not in CHANNELS and c.startswith(("C", "G"))
+                and c not in IGNORED]
+    except Exception as e:
+        print(f"extra rooms lookup failed ({type(e).__name__})")
+        return []
+
+
+IGNORED = {"C0CB0G32T40", "C0ATTQ5718A"}   # private agenda rooms the bot never takes orders in
+
+
+def active(channel, cut, slack, strict=False):
     q = urllib.parse.urlencode({"channel": channel, "oldest": f"{time.time() - LOOKBACK_DAYS * 86400:.0f}", "limit": 200})
     body = get(f"https://slack.com/api/conversations.history?{q}", slack)
     if not body.get("ok"):
@@ -174,7 +189,8 @@ def active(channel, cut, slack):
         return False
     me = bot_id(slack)
     for m in body.get("messages", []):
-        if float(m["ts"]) > cut and wakes(m, me, channel):
+        if float(m["ts"]) > cut and (order_like(m.get("text"), me) and not m.get("bot_id") if strict
+                                     else wakes(m, me, channel)):
             return True
         if float(m.get("latest_reply", 0)) > cut and thread_wakes(channel, m["ts"], cut, slack, me):
             return True
@@ -198,11 +214,13 @@ def main():
     stop = time.time() + WATCH_MINUTES * 60
     checks = woke = stalled = 0
     setup_asked = set()
+    extra = extra_rooms(slack)
     wd_cut, wd_next = cut, 0
     while True:
         started = time.time()
         try:
-            hits = sum(1 for c in CHANNELS if active(c, cut, slack)) + agent_hits(cut, setup_asked)
+            hits = (sum(1 for c in CHANNELS if active(c, cut, slack)) + agent_hits(cut, setup_asked)
+                    + sum(1 for c in extra if active(c, cut, slack, strict=True)))
             if hits:
                 wake()
                 woke += 1
