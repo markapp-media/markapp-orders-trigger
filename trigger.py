@@ -85,6 +85,9 @@ LEAK_HINT = re.compile(r"salar|payroll|ebitda|\bgp\b|gross profit|p\s*&\s*l|\bpr
 ORDER_THREAD = ("Order `ORD-", "Which area is this for")
 HANDOFF = ":handshake: Handoff from `ORD-"
 OWNER = "U0927E76VLP"
+# Owner-only agent rooms where the owner talks to the agent without tagging it (maLAW's #malaw-legal, 27 Oct 2026):
+# any message of his there, top-level or in a thread, wakes the bot.
+OWNER_ROOMS = {"C0CC98EV7BP"}
 WATCHDOG_EVERY = 10 * 60
 BILLING = "https://github.com/organizations/markapp-media/settings/billing"
 
@@ -138,6 +141,8 @@ def order_like(text, me):
 
 
 def wakes(m, me, channel):
+    if channel in OWNER_ROOMS:
+        return m.get("user") == OWNER and not m.get("bot_id") and m.get("subtype") in (None, "file_share", "thread_broadcast")
     if channel and channel.startswith("D"):
         return not m.get("bot_id") and m.get("subtype") in (None, "file_share")   # a person writing to an agent bot
     if HANDOFF in (m.get("text") or "") and m.get("bot_id"):
@@ -158,7 +163,7 @@ def thread_wakes(channel, ts, cut, slack, me):
     fresh = [m for m in msgs[1:] if float(m["ts"]) > cut]
     if any(k in (m.get("text") or "") for m in msgs for k in ORDER_THREAD):
         return any(not m.get("bot_id") or m.get("user") == RELAY_BOT for m in fresh)
-    return any(wakes(m, me, None) for m in fresh)
+    return any(wakes(m, me, channel if channel in OWNER_ROOMS else None) for m in fresh)
 
 
 def active(channel, cut, slack):
