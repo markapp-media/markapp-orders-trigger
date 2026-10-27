@@ -20,7 +20,7 @@ DEFAULT_WINDOW = 15 * 60
 CHECK_EVERY = 45
 WATCH_MINUTES = float(os.environ.get("WATCH_MINUTES", "50"))
 # Named agents with their own Slack bot (secret name). Their channels are the ones that bot is in.
-AGENT_TOKENS = ["HARION_DSP_OPS_BOT_TOKEN", "MARKAPP_CREATIVE_BOT_TOKEN"]
+AGENT_TOKENS = ["HARION_DSP_OPS_BOT_TOKEN", "MARKAPP_CREATIVE_BOT_TOKEN", "MALAW_BOT_TOKEN"]
 
 
 def token(name):
