@@ -12,6 +12,8 @@ import time
 import urllib.parse
 import urllib.request
 
+import guards
+
 CHANNELS = ["C0C9KKMG53M", "C092GNL0E6A", "C0C6ECNBTQU", "C0C6EKFJ7UL", "C0C6PSH3WVB", "C0C9FU3TPCY",
             "C0C7P1Z52A3", "C0CBY3XEA3F",
             "C0CCNQRRW2Y"]   # #project-design: C-level command room (Sotiris + Chris), 27 Oct 2026
@@ -249,6 +251,7 @@ def main():
     setup_asked = set()
     extra = extra_rooms(slack)
     wd_cut, wd_next = cut, 0
+    g_cut, g_next = cut, 0
     while True:
         started = time.time()
         try:
@@ -271,6 +274,9 @@ def main():
                 wd_cut, wd_next = started - 10, started + WATCHDOG_EVERY
             except Exception as e:
                 print(f"watchdog failed ({type(e).__name__})")
+        if started >= g_next:   # ads-txt-monitor early warnings (guards.py)
+            guards.run(slack, token("DISPATCH_TOKEN"), wake_adstxt, g_cut)
+            g_cut, g_next = started - 10, started + guards.GUARD_EVERY
         checks += 1
         if time.time() + CHECK_EVERY >= stop:
             break
