@@ -7,9 +7,10 @@ on:
 
 permissions:
   contents: write
-  actions: read
+  actions: write   # each run starts the next one (below)
 
-# One watcher at a time; the next scheduled run waits in the queue and takes over when this one ends.
+# One watcher at a time. Each run starts the next one when it ends (a chain that does not depend on GitHub's
+# scheduler, which in Nov 2026 started this workflow only 2-4 times a day); the schedule restarts a broken chain.
 concurrency:
   group: trigger
   cancel-in-progress: false
@@ -29,6 +30,10 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: python trigger.py
+      - name: Start the next watcher
+        if: ${{ !cancelled() }}   # cancel a run by hand to stop the chain
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: gh workflow run trigger.yml --repo "${{ github.repository }}" --ref "${{ github.ref_name }}" || echo "::warning::next watcher not started"
       - name: Weekly keep-alive (GitHub pauses idle scheduled workflows after 60 days)
         if: github.event_name == 'schedule'
         run: |

@@ -197,6 +197,39 @@ def active(channel, cut, slack, strict=False):
     return False
 
 
+# #adstxt-crawler: a tag of the adstxt-crawler bot (top level or in a thread) starts that repo's orders run
+# directly (Sotiris 4 Nov 2026: Giannis's finds waited hours while GitHub skipped the repo's own schedule).
+ADSTXT_CHANNEL, ADSTXT_BOT = "C0C6PSH3WVB", "U0C6ZR34WJ0"
+ADSTXT_ORDERS = "markapp-media/ads-txt-monitor/actions/workflows/orders.yml"
+
+
+def adstxt_tagged(cut, slack):
+    tag = f"<@{ADSTXT_BOT}>"
+    q = urllib.parse.urlencode({"channel": ADSTXT_CHANNEL, "oldest": f"{time.time() - 7 * 86400:.0f}", "limit": 200})
+    body = get(f"https://slack.com/api/conversations.history?{q}", slack)
+    if not body.get("ok"):
+        return False
+    for m in body.get("messages", []):
+        if float(m["ts"]) > cut and not m.get("bot_id") and tag in (m.get("text") or ""):
+            return True
+        if float(m.get("latest_reply", 0)) > cut:
+            r = get("https://slack.com/api/conversations.replies?" + urllib.parse.urlencode(
+                {"channel": ADSTXT_CHANNEL, "ts": m["ts"], "limit": 200}), slack)
+            if any(float(x["ts"]) > cut and not x.get("bot_id") and tag in (x.get("text") or "")
+                   for x in (r.get("messages") or [])[1:]):
+                return True
+    return False
+
+
+def wake_adstxt():
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{ADSTXT_ORDERS}/dispatches", data=json.dumps({"ref": "main"}).encode(),
+        headers={"Authorization": f"Bearer {token('DISPATCH_TOKEN')}", "Accept": "application/vnd.github+json"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.status
+
+
 def wake():
     req = urllib.request.Request(
         f"https://api.github.com/repos/{TARGET}/dispatches",
@@ -224,6 +257,11 @@ def main():
             if hits:
                 wake()
                 woke += 1
+            try:
+                if adstxt_tagged(cut, slack):
+                    wake_adstxt()
+            except Exception as e:
+                print(f"::warning::adstxt wake failed ({type(e).__name__} {getattr(e, 'code', '')})")
             cut = started - 10
         except Exception as e:
             print(f"check failed ({type(e).__name__}); retrying next round")
