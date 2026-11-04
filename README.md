@@ -8,7 +8,7 @@ Public on purpose: GitHub Actions minutes are free for public repos. Secrets (`S
 
 - A tag of the adstxt-crawler bot in #adstxt-crawler that the bot has not answered after 5 minutes wakes it again;
   after 15 minutes the owner gets one DM with the link.
-- A scheduled ads-txt-monitor job that GitHub has not started by its deadline is started here (daily crawl 03:30 UTC,
+- A scheduled ads-txt-monitor job that GitHub has not started by its deadline is started here (Wednesday crawl 03:30 UTC,
   Wednesday sellers.json read, Saturday CTV stores, Sunday store sweep).
 - A failed ads-txt-monitor run reaches the owner as one DM with the run link.
 - Each run starts the next one when it ends, so the watcher never depends on GitHub's scheduler.

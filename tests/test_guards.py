@@ -12,7 +12,7 @@ def run_at(s):
     return {"created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t(s)))}
 
 
-def test_missed_daily_crawl_is_started_after_its_deadline_only():
+def test_missed_wednesday_crawl_is_started_after_its_deadline_only():
     none = lambda wf: []   # noqa: E731
     assert "adstxt.yml" in guards.missed(none, t("2026-11-04 03:31"))
     assert "adstxt.yml" not in guards.missed(none, t("2026-11-04 03:00"))          # before the deadline
@@ -40,3 +40,7 @@ def test_unanswered_tags(monkeypatch):
     monkeypatch.setattr(guards, "_slack", lambda m, s, **p: hist if m == "conversations.history" else replies)
     late = guards.unanswered("x", now)
     assert [round(a) for a, _, _ in late] == [600]
+
+
+def test_crawl_is_not_started_on_other_days():
+    assert "adstxt.yml" not in guards.missed(lambda wf: [], t("2026-11-05 03:31"))   # Thursday
