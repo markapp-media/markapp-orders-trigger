@@ -205,19 +205,30 @@ ADSTXT_CHANNEL, ADSTXT_BOT = "C0C6PSH3WVB", "U0C6ZR34WJ0"
 ADSTXT_ORDERS = "markapp-media/ads-txt-monitor/actions/workflows/orders.yml"
 
 
+ADSTXT_ALIASES = ("U0C6ENRTSAK",)   # an older app named 'adstxtcrawler' that people tag by mistake (6 Nov 2026)
+ADSTXT_ORDER = re.compile(r"(?i)^\W*(find|scan|crawl|fill|lookup)\b")
+
+
+def for_adstxt(text):
+    """Tags the adstxt-crawler bot (or its look-alike) anywhere, or tags nobody and starts with an order word."""
+    text = text or ""
+    if any(f"<@{u}" in text for u in (ADSTXT_BOT, *ADSTXT_ALIASES)):
+        return True
+    return "<@" not in text and bool(ADSTXT_ORDER.match(text))
+
+
 def adstxt_tagged(cut, slack):
-    tag = f"<@{ADSTXT_BOT}>"
     q = urllib.parse.urlencode({"channel": ADSTXT_CHANNEL, "oldest": f"{time.time() - 7 * 86400:.0f}", "limit": 200})
     body = get(f"https://slack.com/api/conversations.history?{q}", slack)
     if not body.get("ok"):
         return False
     for m in body.get("messages", []):
-        if float(m["ts"]) > cut and not m.get("bot_id") and tag in (m.get("text") or ""):
+        if float(m["ts"]) > cut and not m.get("bot_id") and for_adstxt(m.get("text")):
             return True
         if float(m.get("latest_reply", 0)) > cut:
             r = get("https://slack.com/api/conversations.replies?" + urllib.parse.urlencode(
                 {"channel": ADSTXT_CHANNEL, "ts": m["ts"], "limit": 200}), slack)
-            if any(float(x["ts"]) > cut and not x.get("bot_id") and tag in (x.get("text") or "")
+            if any(float(x["ts"]) > cut and not x.get("bot_id") and for_adstxt(x.get("text"))
                    for x in (r.get("messages") or [])[1:]):
                 return True
     return False

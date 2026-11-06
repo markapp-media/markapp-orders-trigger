@@ -44,3 +44,9 @@ def test_unanswered_tags(monkeypatch):
 
 def test_crawl_is_not_started_on_other_days():
     assert "adstxt.yml" not in guards.missed(lambda wf: [], t("2026-11-05 03:31"))   # Thursday
+
+
+def test_order_words_and_alias_tags_count():
+    assert guards.for_bot("<@U0C6ENRTSAK> find\na.com, 1, RESELLER")
+    assert guards.for_bot("find\nmarkappmedia.site, C-1035, RESELLER")
+    assert not guards.for_bot("den ton ekanes tag") and not guards.for_bot("<@U0927CST3V5> find it")

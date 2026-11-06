@@ -12,6 +12,7 @@ Public repo: logs say only "ok" or an error type; Slack text goes to the owner's
 import calendar
 import datetime as dt
 import json
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -58,10 +59,19 @@ def dispatch(gh, workflow):
 
 
 # ------------------------------------------------------------------ 1. unanswered tags
+ALIASES = ("U0C6ENRTSAK",)   # look-alike 'adstxtcrawler' app people tag by mistake
+ORDER_WORD = re.compile(r"(?i)^\W*(find|scan|crawl|fill|lookup)\b")
+
+
+def for_bot(text):
+    text = text or ""
+    if any(f"<@{u}" in text for u in (BOT, *ALIASES)):
+        return True
+    return "<@" not in text and bool(ORDER_WORD.match(text))
+
 def unanswered(slack, now=None):
     """[(age seconds, message ts, thread ts)] tags of the bot with no bot message after them in their thread."""
     now = now or time.time()
-    tag = f"<@{BOT}>"
     hist = _slack("conversations.history", slack, channel=CHANNEL, oldest=f"{now - 2 * 86400:.0f}", limit=200)
     if not hist.get("ok"):
         return []
@@ -76,7 +86,7 @@ def unanswered(slack, now=None):
     for parent, msgs in threads.items():
         for m in msgs:
             age = now - float(m["ts"])
-            if m.get("bot_id") or tag not in (m.get("text") or "") or not WAKE_AFTER <= age < GIVE_UP:
+            if m.get("bot_id") or not for_bot(m.get("text")) or not WAKE_AFTER <= age < GIVE_UP:
                 continue
             if not any(x.get("user") == BOT and float(x["ts"]) > float(m["ts"]) for x in msgs):
                 out.append((age, m["ts"], parent))
