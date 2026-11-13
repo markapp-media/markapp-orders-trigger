@@ -25,7 +25,7 @@ WAKE_AFTER, DM_AFTER, GIVE_UP = 5 * 60, 15 * 60, 6 * 3600
 # workflow file, weekday (0 = Monday, None = daily), deadline UTC "HH:MM": started here when no run began in the
 # CATCH hours before the deadline and the deadline passed less than LATE hours ago.
 SCHEDULES = [
-    ("adstxt.yml", 2, "03:30"),         # Wednesday crawl, cron 02:00 / 03:00 UTC (05:00 Athens); weekly since 4 Nov
+    # adstxt.yml: no schedule since 13 Nov 2026 (crawl on request only), so nothing to start here
     ("ssp-db.yml", 1, "23:30"),          # Tuesday 22:30 UTC = Wednesday 00:30 Athens, before the Wednesday post
     ("ctv-stores.yml", 5, "08:45"),      # Saturday 08:00 UTC
     ("store-sweep.yml", 6, "09:45"),     # Sunday 09:00 UTC
